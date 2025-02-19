@@ -8,3 +8,4 @@ pytest>=7.0.0
 black>=22.0.0
 flake8>=5.0.0
 python-dotenv>=0.20.0
+IMDbPY>=2021.4.18
