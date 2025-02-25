@@ -1,0 +1,21 @@
+{
+  "movie_id": "tt0106701",
+  "title": "Dennis the Menace",
+  "year": 1993,
+  "rating": 5.7,
+  "genres": [
+    "Comedy",
+    "Family"
+  ],
+  "cast": [
+    "Walter Matthau",
+    "Mason Gamble",
+    "Joan Plowright",
+    "Christopher Lloyd",
+    "Lea Thompson"
+  ],
+  "reviews": {
+    "status": "error",
+    "message": "No reviews found"
+  }
+}

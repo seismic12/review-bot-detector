@@ -1,0 +1,21 @@
+{
+  "movie_id": "tt0468569",
+  "title": "The Dark Knight",
+  "year": 2008,
+  "rating": 9.0,
+  "genres": [
+    "Action",
+    "Crime",
+    "Drama",
+    "Thriller"
+  ],
+  "cast": [
+    "Christian Bale",
+    "Heath Ledger",
+    "Aaron Eckhart",
+    "Michael Caine",
+    "Maggie Gyllenhaal"
+  ],
+  "reviews": [],
+  "review_count": 0
+}

@@ -12,6 +12,7 @@ from pathlib import Path
 from imdb import IMDb
 import requests
 from bs4 import BeautifulSoup
+import streamlit as st
 
 # Configure logging
 logging.basicConfig(
@@ -21,7 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class DataCollector:
-    """A class to collect movie reviews and metadata from IMDB."""
+    """A class to collect movie data from OMDb API."""
     
     def __init__(self, data_dir: Union[str, Path]):
         """Initialize the DataCollector with configuration."""
@@ -34,113 +35,235 @@ class DataCollector:
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.processed_dir.mkdir(parents=True, exist_ok=True)
         
-        self.ia = IMDb()
+        # Set API key
+        self.api_key = "cc8157f9"
+        self.base_url = "http://www.omdbapi.com/"
         logger.info(f"Initialized DataCollector with data directory: {self.data_dir}")
-        
-    def get_movie_metadata(self, movie_id: str) -> Dict:
+    
+    def search_movies(self, query: str) -> List[Dict]:
         """
-        Collect basic metadata for a movie using the IMDb package.
+        Search for movies using the OMDb API.
         
         Args:
-            movie_id: IMDB movie ID (with or without 'tt' prefix)
+            query: Search term
             
         Returns:
-            Dictionary containing movie metadata
+            List of movie dictionaries
         """
         try:
-            # Remove 'tt' prefix if present
-            clean_id = movie_id.replace('tt', '')
-            movie = self.ia.get_movie(clean_id)
-        
-            metadata = {
-                'movie_id': f"tt{clean_id}",  # Always include tt prefix
-                'title': movie.get('title'),
-                'year': movie.get('year'),
-                'rating': movie.get('rating'),
-                'genres': movie.get('genres', []),
-                'cast': [a.get('name') for a in movie.get('cast', [])[:5]]
+            # Construct API URL with search parameters
+            params = {
+                's': query,
+                'type': 'movie',
+                'apikey': self.api_key
             }
-            return metadata
+            
+            response = self.session.get(self.base_url, params=params)
+            
+            if response.status_code != 200:
+                st.error(f"Failed to search movies: Status {response.status_code}")
+                return []
+                
+            data = response.json()
+            
+            if data.get('Response') == 'False':
+                st.warning(data.get('Error', 'No results found'))
+                return []
+                
+            # Extract relevant movie information
+            movies = []
+            for movie in data.get('Search', []):
+                movies.append({
+                    'id': movie.get('imdbID', ''),
+                    'title': movie.get('Title', ''),
+                    'year': movie.get('Year', ''),
+                    'poster': movie.get('Poster', 'N/A')
+                })
+            
+            return movies
+            
         except Exception as e:
-            logger.error(f"Error collecting metadata for movie {movie_id}: {str(e)}")
+            st.error(f"Error searching movies: {str(e)}")
+            return []
+
+    def get_movie_metadata(self, movie_id: str) -> Dict:
+        """
+        Get detailed movie data using the OMDb API.
+        """
+        try:
+            # Ensure movie_id has 'tt' prefix
+            movie_id = f"tt{movie_id.replace('tt', '')}"
+            
+            params = {
+                'i': movie_id,
+                'apikey': self.api_key,
+                'plot': 'full',
+                'r': 'json'
+            }
+            
+            st.write(f"Fetching data for movie: {movie_id}")
+            response = self.session.get(self.base_url, params=params)
+            
+            if response.status_code != 200:
+                st.error(f"API request failed with status {response.status_code}")
+                return {}
+                
+            data = response.json()
+            
+            if data.get('Response') == 'False':
+                st.warning(f"API returned error: {data.get('Error')}")
+                return {}
+            
+            st.success("Successfully retrieved movie data")
+            
+            # Transform OMDb data to our format
+            metadata = {
+                'movie_id': movie_id,
+                'title': data.get('Title'),
+                'year': data.get('Year'),
+                'rating': data.get('imdbRating'),
+                'votes': data.get('imdbVotes'),
+                'genres': data.get('Genre', '').split(', '),
+                'director': data.get('Director'),
+                'writer': data.get('Writer'),
+                'actors': data.get('Actors', '').split(', '),
+                'plot': data.get('Plot'),
+                'awards': data.get('Awards'),
+                'poster': data.get('Poster'),
+                'ratings': data.get('Ratings', []),
+                'metascore': data.get('Metascore'),
+                'box_office': data.get('BoxOffice'),
+                'production': data.get('Production'),
+                'runtime': data.get('Runtime')
+            }
+            
+            return metadata
+            
+        except Exception as e:
+            st.error(f"Error collecting metadata for movie {movie_id}: {str(e)}")
             return {}
 
     def get_movie_reviews(self, movie_id: str, max_reviews: Optional[int] = 100) -> List[Dict]:
-        """
-        Fetch user reviews for a movie via web scraping.
-        
-        Args:
-            movie_id: IMDB movie ID
-            max_reviews: Maximum number of reviews to collect
-            
-        Returns:
-            List of review dictionaries
-        """
+        """Collect movie reviews"""
         try:
             reviews = []
-            page = 1
-            movie_id = movie_id.replace('tt', '')
-        
-            while len(reviews) < max_reviews:
-                time.sleep(1)  # Rate limiting
+            clean_id = movie_id.replace('tt', '')
             
-                url = f'https://www.imdb.com/title/tt{movie_id}/reviews'
-                if page > 1:
-                    url += f'?page={page}'
+            # Initial URL without pagination key
+            url = f'https://www.imdb.com/title/tt{clean_id}/reviews/_ajax?paginationKey='
             
-                response = self.session.get(url)
-                if response.status_code != 200:
-                    logger.warning(f"Failed to fetch page {page} for movie tt{movie_id}: Status {response.status_code}")
-                    break
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Referer': f'https://www.imdb.com/title/tt{clean_id}/reviews'
+            }
             
+            st.write(f"Fetching initial reviews page...")
+            
+            response = self.session.get(url, headers=headers)
+            st.write(f"Response status: {response.status_code}")
+            
+            if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
-                review_containers = soup.find_all('div', class_='review-container')
-            
-                if not review_containers:
-                    logger.info(f"No more reviews found on page {page} for movie tt{movie_id}")
-                    break
-            
-                for container in review_containers:
-                    if len(reviews) >= max_reviews:
-                        break
-                    
+                
+                # Find all review containers
+                review_containers = soup.find_all('div', class_='lister-item-content')
+                
+                st.write(f"Found {len(review_containers)} reviews")
+                
+                for container in review_containers[:max_reviews]:
                     try:
                         # Extract rating
+                        rating = None
                         rating_elem = container.find('span', class_='rating-other-user-rating')
-                        rating = rating_elem.find('span').text if rating_elem else None
-                    
+                        if rating_elem and rating_elem.find('span'):
+                            try:
+                                rating = int(rating_elem.find('span').text.strip())
+                            except ValueError:
+                                pass
+                        
+                        # Extract content
+                        content = ''
+                        content_elem = container.find('div', class_='text show-more__control')
+                        if content_elem:
+                            content = content_elem.text.strip()
+                        
+                        # Extract title
+                        title = ''
+                        title_elem = container.find('a', class_='title')
+                        if title_elem:
+                            title = title_elem.text.strip()
+                        
+                        # Extract date
+                        date = ''
+                        date_elem = container.find('span', class_='review-date')
+                        if date_elem:
+                            date = date_elem.text.strip()
+                        
+                        # Extract user info
+                        user_id = ''
+                        user_elem = container.find('div', class_='display-name-date')
+                        if user_elem and user_elem.find('a'):
+                            href = user_elem.find('a').get('href', '')
+                            user_parts = href.split('/')
+                            if len(user_parts) > 2:
+                                user_id = user_parts[2]
+                        
                         # Extract helpful votes
-                        helpful_elem = container.find('div', class_='actions text-muted')
-                        helpful_text = helpful_elem.text if helpful_elem else ''
-                        helpful_match = re.search(r'(\d+) out of (\d+)', helpful_text)
                         helpful = {'up': 0, 'total': 0}
-                        if helpful_match:
-                            helpful = {
-                                'up': int(helpful_match.group(1)),
-                                'total': int(helpful_match.group(2))
-                            }
-                    
+                        helpful_elem = container.find('div', class_='actions text-muted')
+                        if helpful_elem:
+                            helpful_text = helpful_elem.text
+                            helpful_match = re.search(r'(\d+) out of (\d+)', helpful_text)
+                            if helpful_match:
+                                helpful = {
+                                    'up': int(helpful_match.group(1)),
+                                    'total': int(helpful_match.group(2))
+                                }
+                        
                         review = {
                             'rating': rating,
-                            'date': container.find('span', class_='review-date').text,
+                            'date': date,
                             'helpful': helpful,
-                            'title': container.find('a', class_='title').text.strip(),
-                            'content': container.find('div', class_='text').text.strip(),
-                            'user_id': container.find('a', class_='display-name-link')['href'].split('/')[-2]
+                            'title': title,
+                            'content': content,
+                            'user_id': user_id
                         }
+                        
+                        # Debug: Print found review (truncated content for readability)
+                        debug_review = review.copy()
+                        if debug_review['content']:
+                            debug_review['content'] = debug_review['content'][:100] + '...'
+                        st.write("Found review:", debug_review)
+                        
                         reviews.append(review)
-                    
+                        
                     except Exception as e:
-                        logger.warning(f"Error parsing review: {str(e)}")
+                        st.warning(f"Error parsing individual review: {str(e)}")
                         continue
+                
+                # Look for pagination key for next page
+                next_page = soup.find('div', class_='load-more-data')
+                if next_page:
+                    pagination_key = next_page.get('data-key')
+                    if pagination_key:
+                        st.write(f"Found pagination key for next page: {pagination_key}")
+                
+                if not reviews:
+                    st.warning("No reviews were successfully parsed")
+                else:
+                    st.success(f"Successfully collected {len(reviews)} reviews")
+                
+                return reviews
+                
+            else:
+                st.error(f"Failed to fetch reviews: {response.status_code}")
+                return []
             
-                page += 1
-                logger.info(f"Collected {len(reviews)} reviews for movie tt{movie_id} (page {page-1})")
-        
-            return reviews[:max_reviews]  # Ensure we don't exceed max_reviews
-        
         except Exception as e:
-            logger.error(f"Error fetching reviews for movie tt{movie_id}: {str(e)}")
+            st.error(f"Error collecting reviews: {str(e)}")
+            st.exception(e)
             return []
     
     def collect_movie_data(self, movie_id: str, max_reviews: Optional[int] = None) -> Dict:

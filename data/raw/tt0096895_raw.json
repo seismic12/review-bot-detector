@@ -1,0 +1,21 @@
+{
+  "movie_id": "tt0096895",
+  "title": "Batman",
+  "year": 1989,
+  "rating": 7.5,
+  "genres": [
+    "Action",
+    "Adventure"
+  ],
+  "cast": [
+    "Michael Keaton",
+    "Jack Nicholson",
+    "Kim Basinger",
+    "Robert Wuhl",
+    "Pat Hingle"
+  ],
+  "reviews": {
+    "status": "error",
+    "message": "No reviews found"
+  }
+}
